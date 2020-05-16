@@ -691,4 +691,165 @@ Signals can do things other than killing a process. `SIGSTOP` pauses a process. 
 
 To background a running program, can use `Ctrl-Z` followed by `bg`. Backgrounded processes are child processes of the terminal and will die if you close the terminal (this sends `SIGHUP`). To prevent this, can run a program with `nohup` which is a wrapper to ignore `SIGHUP` or use `disown` if the process had been started. Or you can use a terminal multiplexer to avoid this problem.
 
+# Lecture 6: Version Control and Git
 
+Version control systems (VCS):
+* Are tools to track changes to source code, or other files and folders.
+* Maintain a history of changes.
+* Facilitate collaboration.
+
+Track changes to a folder and contents in series of snapshots, where each snapshot encapsulates the state of files/folders within a top-level directory. Also maintain metadata like who created each snapshot.
+
+Useful even by yourself; look at old snapshots, keep log of changes, work on parallel branches of development.
+
+## Git
+
+Git is effectively a current standard for version control. Its interface is a leaky abstraction, however, therefore learning from the interface can be confusing. Commands can be "magic".
+
+Git's underlying design and ideas are, however, beautiful.
+
+### Git's data model
+
+#### Snapshots
+
+Git models the history of a collection of files and folders within some top-level directory as a series of snapshots. In Git terminology, a file is a "blob" — a bunch of bytes. A directory is a "tree" and maps names to blobs or trees (directories can contain other directories). A snapshot is the top-level tree that is being tracked:
+
+```
+<root> (tree)
+|
++- foo (tree)
+|   |
+|   + bar.txt (blob, contents = "hello world")
+|
++- baz.txt (blob, contents = "git is wonderful")
+```
+
+##### Relating snapshots
+
+How should a VCS relate snapshots? One simple model could be linear history. But Git doesn't use this. Instead, a history is a directed acyclic graph (DAG) of snapshots. Each snapshot refers to a set of "parents", snapshots that preceded it. This is a set of parents, not just a single parent, because a snapshot might descend from multiple branches, e.g. when you combine (merge) two parallel development branches.
+
+Git calls these snapshots "commits".
+
+Commit history might look like:
+
+```
+O <-- O <-- O <-- O
+            ^
+             \
+              --- O <-- O
+```
+
+`O` represents a commit.
+`<--` point to the parent of each commit.
+
+After the third commit, the history branches into two separate branches. Could be two separate features developed in parallel. These branches could be merged to create a snapshot with both features:
+
+```
+O <-- O <-- O <-- O <---- X
+            ^            /
+             \          v
+              --- O <-- O
+```
+With `X` being the merge commit.
+
+Commits in Git are immutable. This doesn't mean you can't correct mistakes, just means that edits to the commit history are creating entirely new commits and references are updated to point to the new ones.
+
+#### Data model as pseudocode
+
+```
+// a file is a bunch of bytes
+type blob = array<byte>
+
+// a directory contains named files and directories
+type tree = map<string, tree | file>
+
+// a commit has parents, metadata, and the top-level tree
+type commit = struct {
+    parent: array<commit>
+    author: string
+    message: string
+    snapshot: tree
+}
+```
+
+This is a clean, simple model of history.
+
+##### Objects and content-addressing
+
+An "object"! is a blob, tree, or commit:
+
+```
+type object = blob | tree | commit
+```
+
+In Git data store, all objects are content-addressed by their SHA-1 hash.
+
+```
+objects = map<string, object>
+
+def store(object):
+    id = sha1(object)
+    objects[id] = object
+
+def load(id):
+    return objects[id]
+```
+
+Blobs, trees, and commits are unified in this way: they are all objects. When they reference other objects, they don’t actually contain them in their on-disk representation, but have a reference to them by their hash.
+
+For example, the tree for the example directory structure above (visualized using `git cat-file -p 698281bc680d1995c5f4caaf3359721a5a58d48d`), looks like this:
+
+```
+100644 blob 4448adbf7ecd394f42ae135bbeed9676e894af85    baz.txt
+040000 tree c68d233a33c5c06e0340e4c224f0afca87c8ce87    foo
+```
+
+The tree itself contains pointers to its contents, `baz.txt` (a blob) and `foo` (a tree). If we look at the contents addressed by the hash corresponding to `baz.txt` with `git cat-file -p 4448adbf7ecd394f42ae135bbeed9676e894af85`, we get the following:
+
+```
+git is wonderful
+```
+
+##### References
+
+Now, all snapshots can be identified by their SHA-1 hash. That’s inconvenient, because humans aren’t good at remembering strings of 40 hexadecimal characters.
+
+Git’s solution to this problem is human-readable names for SHA-1 hashes, called "references". References are pointers to commits. Unlike objects, which are immutable, references are mutable (can be updated to point to a new commit). For example, the `master` reference usually points to the latest commit in the main branch of development.
+
+```
+references = map<string, string>
+
+def update_reference(name, id):
+    references[name] = id
+
+def read_reference(name):
+    return references[name]
+
+def load_reference(name_or_id):
+    if name_or_id in references:
+        return load(references[name_or_id])
+    else:
+        return load(name_or_id)
+```
+
+With this, Git can use human-readable names like "master" to refer to a particular snapshot in the history, instead of a long hexadecimal string.
+
+One detail is that we often want a notion of "where we currently are" in the history, so that when we take a new snapshot, we know what it is relative to (how we set the parents field of the commit). In Git, that "where we currently are" is a special reference called "HEAD".
+
+##### Repositories
+
+Finally, we can define what (roughly) is a Git repository: it is the data objects and references.
+
+On disk, all Git stores are objects and references: that’s all there is to Git’s data model. All `git` commands map to some manipulation of the commit DAG by adding objects and adding/updating references.
+
+Whenever you’re typing in any command, think about what manipulation the command is making to the underlying graph data structure. Conversely, if you’re trying to make a particular kind of change to the commit DAG, e.g. "discard uncommitted changes and make the master ref point to commit 5d83f9e", there’s probably a command to do it (e.g. in this case, `git checkout master`; `git reset --hard 5d83f9e`).
+
+### Staging area
+
+This is another concept that’s orthogonal to the data model, but it’s a part of the interface to create commits.
+
+One way you might imagine implementing snapshotting as described above is to have a "create snapshot" command that creates a new snapshot based on the current state of the working directory. Some version control tools work like this, but not Git. We want clean snapshots, and it might not always be ideal to make a snapshot from the current state. For example, imagine a scenario where you’ve implemented two separate features, and you want to create two separate commits, where the first introduces the first feature, and the next introduces the second feature. Or imagine a scenario where you have debugging print statements added all over your code, along with a bugfix; you want to commit the bugfix while discarding all the print statements.
+
+Git accommodates such scenarios by allowing you to specify which modifications should be included in the next snapshot through a mechanism called the "staging area".
+
+# Lecture 7: Debugging and profiling
