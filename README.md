@@ -1,5 +1,3 @@
-Missing Semester of your CS Education
-
 # Lecture 1: Shell
 
 Way of interacting with computer.
@@ -853,3 +851,318 @@ One way you might imagine implementing snapshotting as described above is to hav
 Git accommodates such scenarios by allowing you to specify which modifications should be included in the next snapshot through a mechanism called the "staging area".
 
 # Lecture 7: Debugging and profiling
+
+## Debugging
+
+### Print statements versus logging
+
+Print statements are useful for debugging; adding them around code you want to inspect.
+
+Using logging is another approach, instead of print statements, to record events. Also has benefits:
+
+* Can direct logs to different places, files, sockets or server instead of standard output/error.
+* Often support severity levels that allow filtering of output.
+* Can be useful if you encounter new issues.
+
+### Third party logs
+
+* Most programs write logs to somewhere in system, e.g. `/var/log/journal`.
+* Can use `logger` shell program to send messages to logs.
+* Logs often need processing and filtering to get the information you want. Can use flags of e.g. `journalctl` to help.
+
+### Debuggers
+
+Programs that let you interact with execution of a program, allowing you to:
+
+* Halt execution of the program at a certain line.
+* Step through the program one instruction at a time.
+* Inspect values of variables after the program crashed.
+* Conditionally halt the execution when a given condition is met.
+* And more.
+
+Many programming languages come with some form of debugger. For Python, this is `pdb`.
+
+There is also `ipdb` that uses the IPython REPL.
+
+### Specialised tools
+
+#### System calls
+
+When programs need to perform actions that only the kernel can, they use system calls ("syscalls").
+
+Can trace the syscalls your program makes: `strace` for Linux; `dtrace` for OSX and BSD. `dtrace` has its own language, can use `dtruss` as a wrapper which makes `dtrace` more like `strace`.
+
+For example:
+
+```
+strace -e lstat ls -l > /dev/null
+```
+
+#### Network tools
+
+May need to look at the network packets to figure out an issue. Can use `tcpdump` and Wireshark to read network packets and filter them.
+
+#### Web tools
+
+Firefox/Chrome developer tools are useful.
+
+#### Static analysis
+
+For some issues, don't need to run code. Can analyse code to find issues without running it; static analysis tools take source code as input and analyse them using rules to reason about it.
+
+Code linting for flagging problems, of code correctness, of style — can have autoformatting, of security. And for many languages, including shell scripts, and even e.g. Markdown.
+
+## Profiling
+
+Even if you code behaves as you expect, still might not be good enough if it uses too much CPU or memory. Finding hot spots in programs is useful; use profiling and monitoring tools.
+
+### Timing
+
+In a simple case, can print time around lines. Wall clock time can be misleading due to computer running other processes or waiting for events. Tools often distinguish different measures of time, e.g. output from `time`:
+
+* Real — wall clock elapsed time from start to finish, including time taken by other processes and time taken while blocked (e.g. waiting for input/output or network).
+* User — amount of time spent in the CPU running user code.
+* Sys — amount of time spent in the CPU running kernel code.
+
+### Profilers
+
+#### CPU
+
+Often by profilers people mean CPU profilers, which are the most common. Two main types:
+
+* Tracing profilers: record every function call your program makes.
+* Sampling profilers probe your program periodically and record the program's stack, and aggregates statistics of what your program spends time doing.
+
+Most languages have a command-line profiler.
+
+In Python `cProfile`: can run via `python -m cProfile -s tottime grep.py 1000 '^(import|\s*def)[^,]*$' *.py`
+
+Many profilers, including `cProfile`, display time per function call. Can be unintuitive since internal function calls are accounted for. Often more intuitive to display the time taken per line of code; line profilers do this.
+
+#### Memory
+
+In non-garbage collected languages, e.g. C and C++, can have memory leaks from not releasing memory that's no longer needed, e.g. Valgrind.
+
+In garbage collected languages, e.g. Python, still useful to use a memory profiler: as long as there are references to an object in memory, the object won't be garbage collected.
+
+#### Event profiling
+
+Can ignore specifics of code, a bit like using `strace`, and use `perf` to profile code instead, treating program as a black box, to report system events related to programs.
+
+#### Visualisation
+
+Profilers output lots of information. Useful to represent visually, e.g. flame graphs, call graphs.
+
+#### Resource monitoring
+
+Programs often run slowly when resource constrained, e.g. not enough memory or slow network. Examples of tools:
+
+* General monitoring: `htop`
+* I/O: `iotop`
+* Disk usage: `df`, `du`
+* Memory usage: `free`
+* Open files: `lsof`
+* Network connections and config: `ss`, `ip`
+* Network usage: `nethogs`
+
+Can stress a machine by `stress` and carry out black box benchmarking with `hyperfine`.
+
+Web developer tools useful for profiling web page loading.
+
+## Extra notes I made on cgroups for one of the exercises
+
+Exercise was to restrict CPU and memory usage for `stress`.
+
+cgroups, control groups
+`/sys/fs/cgroup`
+
+
+* Control resources
+* Can use `cgcreate`: `sudo cgcreate -a <user> -t <user> -g memory,cpuset:stresslimit`
+* Can use `cgexec`: `cgexec -g memory,cpuset:stresslimit stress -c 3`
+
+Can set values inside `/sys/fs/cgroup/cpuset/stresslimit`
+
+```sh
+$ cat cpuset.cpus
+0,2
+$ cat cpuset.mems # this also has to be set
+0
+```
+
+`/sys/fs/cgroup/memory/stresslimit`
+
+From [kernel.org docs](https://www.kernel.org/doc/Documentation/cgroup-v1/memory.txt):
+
+```
+ memory.limit_in_bytes           # set/show limit of memory usage
+ memory.memsw.limit_in_bytes     # set/show limit of memory+Swap usage
+```
+
+However, `memory.memsw.limit_in_bytes` doesn't seem to exist in Ubuntu.
+
+# Lecture 8: Metaprogramming
+
+By "metaprogramming" mean things that are more about process than writing code (actually also a term for programs that operate on programs).
+
+## Build systems
+
+For example, writing a LaTeX paper, what commands are need to produce the paper? What about running benchmarks, plotting them and inserting the plot into the paper? Or compiling code and running tests?
+
+Most projects, whether they contain code or not, have a "build process": some sequence of operations to go from your inputs to outputs. May have many steps, e.g. run this to generate a plot, run that to generate results and something else to produce a paper.
+
+"Build systems" are tools that can help. Many of them: which you use might depend on the task, language you are using and size of project. All similar in operation. Define a number of *dependencies*, *targets* and *rules* for going from dependencies to targets. Tell the build system that you want a particular target and its job is to find all the transitive dependencies of the target, and apply the rules to produce intermediate targets until the final target has been produced. Ideally the build system does this without executing rules for targets whose dependencies haven't changed and where the result is available from a previous buld.
+
+### `make`
+
+`make` is a very common build system, installed on almost any *nix OS. Works well for simple to moderate projects but does have its warts.
+
+When you run `make`, it consults a file called `Makefile` in the current directory. All the targets, dependencies and rules are defined in that file.
+
+Example:
+
+```make
+paper.pdf: paper.tex plot-data.png
+	pdflatex paper.tex
+
+plot-%.png: %.dat plot.py
+	./plot.py -i $*.dat -o $@
+```
+
+Each section of this file is a rule. Each target in this file, on the left of a colon, specifies its dependencies on the right. The indented block, a *recipe*, is a series of commands to produce the target from the dependencies.
+
+For `make`, the first target is the default: run `make` without arguments and it will build this target. Or you can run e.g. `make plot-data.png` and it will build that instead.
+
+The `%` in a rule is a "pattern" and matches on the left and on the right. For example, if `plot-foo.png` is requested, `make` will look for dependencies `foo.dat` and `plot.py`.
+
+Running `make` with an empty directory:
+
+```
+make: *** No rule to make target 'paper.tex', needed by 'paper.pdf'.  Stop.
+```
+
+So, to make `paper.pdf` we need `paper.tex`. There is no rule to specify how to make `paper.tex`. So, we need to provide it:
+
+```sh
+$ touch paper.tex
+$ make
+make: *** No rule to make target 'plot-data.png', needed by 'paper.pdf'.  Stop
+```
+
+There is a rule to make `plot-data.png` but is a pattern rule. Since the source files including `data.dat` don't exist, `make` states it cannot make the file.
+
+So, create the files:
+
+```
+$ cat paper.tex
+\documentclass{article}
+\usepackage{graphicx}
+\begin{document}
+\includegraphics[scale=0.65]{plot-data.png}
+\end{document}
+$ cat plot.py
+#!/usr/bin/env python
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-i', type=argparse.FileType('r'))
+parser.add_argument('-o')
+args = parser.parse_args()
+
+data = np.loadtxt(args.i)
+plt.plot(data[:, 0], data[:, 1])
+plt.savefig(args.o)
+$ cat data.dat
+1 1
+2 2
+3 3
+4 4
+5 8
+```
+
+Now `make` works, producing `paper.pdf`:
+
+```sh
+$ make
+./plot.py -i data.dat -o plot-data.png
+pdflatex paper.tex
+... lots of output ...
+```
+
+If we run `make` again, it doesn't do anything because it checks all of the previously built targets and they are all up-to-date with respect to their listed dependencies.
+
+```sh
+$ make
+make: 'paper.pdf' is up to date.
+```
+
+If e.g. `paper.tex` changes, then running `make` will rebuild `paper.pdf`.
+
+## Dependency management
+
+Software projects often have dependencies on other software projects. You might depend on:
+
+* Installed programs (e.g. `python`)
+* System packages (e.g. `openssl`)
+* Libraries in your programming language (e.g. `matplotlib`)
+
+Most dependencies are available through a repository that hosts many dependencies in one place and often there is some convenient method to install them, e.g.
+
+* `apt` for Ubuntu packages
+* RubyGems for Ruby libraries
+* PyPI for Python libraries
+* Arch User Repository for Arch Linux user-contributed packages
+
+Mechanisms for installing vary, but often share common ideas.
+
+### Versioning
+
+Most projects that other projects depend on issue a version number with each release. They are often, but not always, numerical. Serve many purposes, especially to ensure that software keeps working.
+
+If someone releases a new version of their library where they rename a function, someone else's software will break if they already depend on that library and use that function; it will no longer exist. Versioning tries to solve this problem by letting a project say it depends on a particular version or range of versions of another project. So, if the underlying library changes, dependent software just continues to use an older version of the library.
+
+This isn't ideal because the underlying library may have a security update that doesn't change the underlying public interface (its API) and which any project using the library should immediately be using. This is where different parts of a version number are important in semantic versioning. In semantic versioning, each version number is of the form major.minor.patch.
+
+The rules are:
+
+* If a new release does not change the API, increase the patch version.
+* If you add to your API in a backwards-compatible way, increase the minor version.
+* If you change the API in a non-backwards-compatible way, increase the major version.
+
+This gives a means to specify what version of a library to use. Should be able to use the same major version, with an equal or higher minor version, without changing your code.
+
+#### Lock files
+
+Lock files are files specifying the versions your code currently depends on. Often need to run a program to upgrade to newer dependency versions. Many reasons for this including avoiding recompiles, having reproducible builds and not automatically upgrading to the latest version, which could be broken.
+
+#### Vendoring
+
+Vendoring goes even further in locking dependencies by copying all the code of your dependencies into the project. This gives you total control over changes to it, and also allows you to make your own changes easily, but also means you have to pull in updates from the upstream maintainers over time.
+
+## Continuous integration systems
+
+On larger projects, may find additional tasks to do when you make a change to it. For example:
+
+* Upload a new documentation version
+* Upload a compiled version somewhere
+* Release the code to PyPI
+* Run your test suite
+
+Maybe you want pull requests to be style checked and benchmarks to run. Continuous integration (CI) systems can help.
+
+Many companies provide various types of CI, e.g. Azure Pipelines, Travis CI and GitHub Actions. All work roughly in the same way: add a file to your repository to describe what should happen when events happen in that repository. A common one is "when someone pushes code, run the tests". The CI provider then spins up a virtual machine (or more), runs your "recipe" and notes the results somewhere.
+
+Can use CI to build a project entirely, e.g. publishing a web site whose content is written in Markdown.
+
+## Testing
+
+Most large software projects come with a "test suite". Terms you might encounter:
+
+* *Test suite*: a collective term for all the tests
+* *Unit test*: a "micro-test" that tests a specific feature in isolation
+* *Integration test*: a "macro-test" that runs a larger part of the system to check that different feature or components work together.
+* *Regression test*: a test that implements a particular pattern that previously caused a bug to ensure that the bug does not resurface.
+* *Mocking*: replacing a function, module, or type with a fake implementation to avoid testing unrelated functionality. For example, you might "mock the network" or "mock the disk".
