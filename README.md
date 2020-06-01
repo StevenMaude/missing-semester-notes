@@ -1166,3 +1166,132 @@ Most large software projects come with a "test suite". Terms you might encounter
 * *Integration test*: a "macro-test" that runs a larger part of the system to check that different feature or components work together.
 * *Regression test*: a test that implements a particular pattern that previously caused a bug to ensure that the bug does not resurface.
 * *Mocking*: replacing a function, module, or type with a fake implementation to avoid testing unrelated functionality. For example, you might "mock the network" or "mock the disk".
+
+# Lecture 9: Security and Cryptography
+
+## Entropy
+
+Entropy is a measure of randomness. Useful when determining password strength. How is it quantified?
+
+It is measured in *bits* and when selecting uniformly at random from a set of possible outcomes, it is equal to the base 2 logarithm of the number of possibilities. A fair coin flip has 1 bit of entropy; a 6-sided die roll has ~2.58 bits of entropy.
+
+You should consider that the attacker knows the *model* of the password, but not the randomness.
+
+How many bits of entropy is enough for a password? Depends on your threat model: for online guessing (e.g. that might be rate limited) you may be happy with fewer than if you think that it is likely that offline guessing is possible.
+
+## Hash functions
+
+Cryptographic hash functions map data of arbitrary size to a fixed size, e.g. SHA-1 as used in Git (though SHA-1 is no longer recommended). Maps arbitrary-sized inputs to 160-bit outputs (that can be represented by 40 hexadecimal digits).
+
+Cryptographic hash functions can be thought of as hard-to-invert random-looking (but deterministic) functions. (The ideal model of a hash function is a "random oracle".)
+
+Cryptographic hash functions have the following properties:
+* Deterministic: same input always generates the same output.
+* Non-invertible: hard to find an input `m` such that `hash(m) = h` for some desired output `h`.
+* Target collision resistant: given an input `m_1`, it's hard to find a different input `m_2` such that `hash(m_1) = hash(m_2)`.
+* Collision resistant: hard to find two inputs such that `hash(m_1) = hash(m_2)`; a stronger property than target collision resistance.
+
+Implicit in the notes, but not stated is the property that two similar inputs should give very different outputs. Their example is SHA-1 of `hello` versus `Hello`.
+
+### Applications
+
+* Git, for content-addressed storage. The idea of a hash function is more general than in cryptography.
+* Short summary of a file's contents. Allowing you to e.g. download a file from a mirror, and verifying the hash from the original source.
+* Commitment schemes. E.g. allows you to make a coin toss under this scenario: one person flips a coin in their head by picking a random number, where even is defined as heads and odd as tails, finding the hash, sharing the hash, and the other person guesses heads or tails. After the guess, the coin flipper can share the original random value with the guesser and they can verify the result and confirm the flipper hasn't cheated.
+
+## Key derivation functions (KDFs)
+
+Related to hash functions, KDFs produced fixed-length output for uses as keys in other cryptographic applications. Often KDFs are deliberately slow to limit offline brute force attacks. Since the algorithm is otherwised used relatively rarely, being somewhat slow is not a severe problem. (This is notable because usually the ideal is to have algorithms that are fast.)
+
+Can use a passphrase as input to the KDF, then use the output from the KDF.
+
+### Applications
+
+* Producing keys from passphrases for use in other cryptographic algorithms (e.g. symmetric cryptography).
+* Storing login credentials. Storing plaintext passwords is bad. Better to generate and store a random salt for each user, store the output of the KDF on the password + salt and verify login attempts by computing the output of the KDF on the input + salt.
+
+## Symmetric cryptography
+
+
+e.g. AES.
+
+Scheme is composed of the following functions:
+
+```
+keygen() -> key  (this function is randomized)
+
+encrypt(plaintext: array<byte>, key) -> array<byte>  (the ciphertext)
+decrypt(ciphertext: array<byte>, key) -> array<byte>  (the plaintext)
+```
+
+`encrypt()` has the property that given the output, it is hard to determine the input without the key. `decrypt()` has the correctness property that `decrypt(encrypt(m, k), k) = m`.
+
+Note that securely distributing the key is important.
+
+### Applications
+
+* Encrypting files for storage in an untrusted cloud service. Can be combined with KDFs. Store the output of `encrypt(file, key)` and store the key elsewhere.
+
+## Asymmetric cryptography
+
+Asymmetric: two keys, two roles:
+
+* Private key, keep private.
+* Public key, can distribute and doesn't affect security (unlike in a symmetric cryptosystem).
+
+Scheme:
+
+```
+keygen() -> (public key, private key)  (this function is randomized)
+
+encrypt(plaintext: array<byte>, public key) -> array<byte>  (the ciphertext)
+decrypt(ciphertext: array<byte>, private key) -> array<byte>  (the plaintext)
+
+sign(message: array<byte>, private key) -> array<byte>  (the signature)
+verify(message: array<byte>, signature: array<byte>, public key) -> bool  (whether or not the signature is valid)
+```
+
+Can encrypt/decrypt or sign/verify.
+
+`encrypt()` and `decrypt()` have same properties as those in symmetric cryptosystems.
+
+`sign()` and `verify()` have a similar use as written signatures: they provide proof something was created by a particular author.
+
+## Lock analogies for symmetric and asymmetric cryptosystems
+
+Can compare the two approaches to physical locks:
+
+* Symmetric cryptosystems are like having a door lock, where anyone with the key can unlock it or lock it.
+* Asymmetric cryptosystems are like a padlock: someone can provide an open padlock (the public key) but, when it is locked, only the private key holder can open the lock again.
+
+### Applications
+
+* Email encryption; post public keys and receive encrypted email.
+* Private messaging.
+* Signing software.
+
+### Key distribution
+
+Asymmetric cryptography avoids the problem of sharing keys that symmetric cryptography has. Instead, there is a challenge of mapping public keys to real-world identities. Different solutions, e.g. Signal uses trust on first use by supporting out-of-band public key exchange. PGP usees web of trust. Keybase did this by using social media accounts.
+
+## Hybrid encryption
+
+Hybrid encryption combines symmetric and asymmetric cryptography.
+
+Asymmetric cryptography is slow, symmetric cryptography is faster. Therefore use asymmetric cryptography to easily distribute a symmetric key initially and then use only the symmetric key to transmit information more quickly.
+
+## Case studies
+
+### Password managers
+
+Use unique, randomly generated high-entropy passwords and save all passwords in one place, symmetrically encrypted with a key produced from a passphrase using a KDF. Only need to remember a single high-entropy password, avoiding password reuse.
+
+### Full disk encryption
+
+Protect your data. Encrypt with a symmetric cipher with a key protected by a passphrase.
+
+### SSH
+
+`ssh-keygen` generates an asymmetric keypair, randomly using entropy provided by the operating system. Public key is stored as is; private key should be encrypted with a passphrase: `ssh-keygen` prompts for passphrase, used in KDF to produce a key which encrypts the private key.
+
+Once the server knows the client's public key (stored in `.ssh/authorized_keys` on the server), a connecting client can prove its identify using asymmetric signatures. This is done via challenge-response. At a high level, the server picks a random number and sends it to the client. The client signs this message and sends the signature back to the server, which checks the signature against the public key on record. This effectively proves that the client has the private key corresponding to the public key that the server has stored.
