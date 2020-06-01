@@ -1,7 +1,8 @@
 # License of these notes
 
-These notes are heavily based, in some places simply a copy-paste of the
-[original lecture](https://github.com/missing-semester/missing-semester/) notes
+These notes are heavily based on, and in some places simply a copy-paste
+of, the [original
+lecture](https://github.com/missing-semester/missing-semester/) notes,
 and therefore distributed under the same license.
 
 They are in one file for my quick reference.
