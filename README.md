@@ -689,6 +689,85 @@ Signals can do things other than killing a process. `SIGSTOP` pauses a process. 
 
 To background a running program, can use `Ctrl-Z` followed by `bg`. Backgrounded processes are child processes of the terminal and will die if you close the terminal (this sends `SIGHUP`). To prevent this, can run a program with `nohup` which is a wrapper to ignore `SIGHUP` or use `disown` if the process had been started. Or you can use a terminal multiplexer to avoid this problem.
 
+## `tmux`: a terminal multiplexer
+
+May want to do more than one thing at once in terminals. Can use multiple windows, but a terminal multiplexer is a more versatile alternative.
+
+`tmux` and other multiplexers allow you to interact with multiple terminal windows with panes and tabs. Let you detach a terminal session and reattach later; means you don't need to use `nohup`.
+
+`tmux` very popular, though `screen` is often installed. `tmux` uses keybindings of the form `<C-b>` and then a key.
+
+`tmux` has a organisational hierarchy:
+
+* sessions, independent workspaces with one or more windows
+* windows, like tabs in editors/browsers
+* panes, like Vim splits; multiple shells in a window
+
+### Sessions
+
+`tmux` starts a new session.
+`tmux new -s NAME` starts a session with that name.
+`tmux ls` lists sessions.
+`<C-b> d` detaches the current session.
+`tmux a` attaches the last session; `-t` specifies a session.
+
+### Windows
+
+`<C-b> c` Creates a new window. To close it you can just terminate the shells doing <C-d>
+`<C-b> N` Go to the N th window. Note they are numbered
+`<C-b> p` Goes to the previous window
+`<C-b> n` Goes to the next window
+`<C-b> ,` Rename the current window
+`<C-b> w` List current windows
+
+### Panes
+
+`<C-b> "` Split the current pane horizontally
+`<C-b> %` Split the current pane vertically
+`<C-b> <direction>` Move to the pane in the specified direction. Direction here means arrow keys.
+`<C-b> z` Toggle zoom for the current pane
+`<C-b> [` Start scrollback. You can then press <space> to start a selection and <enter> to copy that selection.
+`<C-b> <space>` Cycle through pane arrangements.
+
+## Aliases
+
+Shells support aliasing: replacing a shell command with a short form.
+
+In bash:
+
+```
+alias alias_name="command to_alias arg1 arg2"
+```
+
+`alias` is a shell command and takes one argument. To make an alias exist in all shell sessions, you need to include in a shell startup file.
+
+## Dotfiles
+
+Many programs configured via dotfiles: text configuration files.
+
+Useful to put into version control and symlink the files to where they should go, for easy reuse across machines and change tracking.
+
+Note that some customisations may be machine specific and therefore you may need conditional inclusion of particular parts of the configuration. That could be via if statements (e.g. as in shell, may have different configurations for different platforms) or includes to have local machine specific settings. For different shells, may have a shared set of aliases, for example.
+
+SSH has a config file, but may not want to share that publicly.
+
+## Remote machines
+
+Often use `ssh`. Can run commands directly: `ssh user@server ls` which also works with pipes (as shown in a previous lecture).
+
+### Copying files to remote servers
+
+Options:
+* `ssh` and `tee`: write a file using tee on remote server read from stdin (they use `cat localfile | ssh remote_server tee serverfile` but guess you can avoid `cat`).
+* `scp` can recurse over paths.
+* `rsync` similar syntax to `scp` but detects identical files on local and remote.
+
+## Port forwarding
+
+May want to forward a port by SSH, either forwarding a local port to remote port or remote port to local port. Enables connecting to software that runs on specific ports even if those ports aren't directly available.
+
+A use case: Jupyter notebook running on remote machine, you can forward a local port to the remote port where the notebook is running.
+
 # Lecture 6: Version Control and Git
 
 Version control systems (VCS):
